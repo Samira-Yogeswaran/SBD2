@@ -29,21 +29,38 @@ numerische_variablen <- data[, sapply(data, is.numeric)]
 # Erstelle einen Paarplot
 pairs(numerische_variablen, main = "Scatterplot Matrix für alle Variablen")
 
-# Install GGally package if you don't have it already
+#---------------------
+# Installiere ggplot2 und GGally, falls du diese noch nicht installiert hast
+# install.packages("ggplot2")
+# install.packages("GGally")
 
-install.packages("GGally")
-
-# Load necessary libraries
+# Lade die erforderlichen Bibliotheken
+library(ggplot2)
 library(GGally)
 
-# Load your dataset (adjust the file path as needed)
+# Lade deinen Datensatz (passe den Dateipfad entsprechend an)
 df <- read.csv("loan_sample_4.csv")
 
-# Select numerical columns for pair plotting
+# Wähle die numerischen Spalten aus
 numerical_columns <- df[, c('loan_amnt', 'int_rate', 'annual_inc', 'dti', 'revol_bal', 'total_acc', 'tot_cur_bal')]
 
-# Generate the pair plot
-ggpairs(numerical_columns)
+# Funktion zum Erstellen eines Scatterplots für jedes Paar von Variablen
+plot_pairs <- function(df, var1, var2) {
+  p <- ggplot(df, aes_string(x = var1, y = var2)) + 
+    geom_point(alpha = 0.6) + 
+    theme_minimal() + 
+    labs(title = paste("Scatterplot of", var1, "vs", var2), x = var1, y = var2)
+  print(p)
+}
+
+# Schleife, um Scatterplots für jede Paarung von Variablen zu erstellen
+var_names <- colnames(numerical_columns)
+
+for (i in 1:(length(var_names) - 1)) {
+  for (j in (i + 1):length(var_names)) {
+    plot_pairs(numerical_columns, var_names[i], var_names[j])
+  }
+}
 
 
 ##Exercise 2
