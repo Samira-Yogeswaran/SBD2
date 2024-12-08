@@ -1,0 +1,898 @@
+---
+title: "Assignment SBD 2"
+author: "Samira Yogeswaran"
+date: "2024-12-08"
+output: html_document
+---
+
+
+## Einleitung
+In diesem Dokument wird die Analyse eines Kredit-Datensatzes durchgeführt, um ein Modell zur Vorhersage von Kreditausfällen (`Status`) zu entwickeln. Es werden Datenexploration, Datenbereinigung, Balancierung des Datensatzes, Feature-Selektion und Modelltraining beschrieben.
+
+---
+
+## Bibliotheken laden
+
+```{r libraries, message=FALSE, warning=FALSE}
+# Notwendige Bibliotheken laden
+libraries <- c(
+  "readr",          # Für das Einlesen von Datensätzen (CSV, Excel etc.)
+  "ggplot2",        # Für Datenvisualisierung (Balkendiagramme, Boxplots etc.)
+  "Boruta",         # Für die Feature-Selektion basierend auf Random Forest
+  "ROSE",           # Für Balancierung unausgeglichener Datensätze
+  "caret",          # Für Machine-Learning-Modelle und Kreuzvalidierung
+  "ROCR",           # Für Performance-Messung (ROC-Kurven, AUC)
+  "dplyr",          # Für Datenmanipulation (Filtern, Gruppieren etc.)
+  "randomForest",   # Für Random Forest Modelltraining
+  "fastDummies",    # Für Dummy-Kodierung von kategorialen Variablen
+  "corrplot",       # Für Korrelationen und Heatmaps
+  "pROC",           # Für ROC-Kurven und AUC-Berechnungen
+  "ggpubr",         # Für erweitertes Plotten mit ggplot2
+  "tidyverse",      # Sammlung von Paketen für Datenmanipulation und Visualisierung
+  "RColorBrewer",   # Für Farbschemata bei Plots
+  "ggcorrplot",     # Für Korrelationen mit ggplot2
+  "PerformanceAnalytics",  # Für erweiterte Korrelationstabellen
+  "corrr",          # Für Korrelationen und Zusammenhänge
+  "networkD3",      # Für Netzwerkanalysen (falls nötig)
+  "reshape",        # Für Umwandlungen von Datenstrukturen
+  "knitr",          # Für Berichtserstellung in R Markdown
+  "dlookr",         # Für erweiterte Datenanalysen (Outlier-Reports, Diagnosen)
+  "smotefamily"     # Für SMOTE (Synthetic Minority Oversampling Technique)
+)
+
+# Installiere fehlende Bibliotheken
+to_install <- libraries[!libraries %in% installed.packages()]
+if (length(to_install) > 0) install.packages(to_install)
+
+# Lade alle Bibliotheken
+lapply(libraries, library, character.only = TRUE)
+```
+
+## Warum ist dieser Schritt notwendig?
+
+In diesem Abschnitt werden die notwendigen Bibliotheken für die Datenanalyse, Modellierung und Visualisierung geladen. Dies ist ein wichtiger Schritt, da diese Pakete die Grundlage für die im Projekt benötigten Funktionen bilden. Der Code wurde so gestaltet, dass er folgende Ziele erfüllt:
+
+1. **Automatisierung der Installation:**
+   Der Code überprüft, ob alle definierten Bibliotheken bereits installiert sind. Fehlende Pakete werden automatisch mit `install.packages()` installiert. Dies reduziert potenzielle Fehler und macht den Code portabel.
+
+2. **Einheitliche Funktionsbereitstellung:**
+   Durch die automatische Installation und das Laden der Bibliotheken wird sichergestellt, dass alle benötigten Funktionen verfügbar sind, ohne dass der Nutzer manuell Pakete installieren muss.
+
+3. **Reproduzierbarkeit des Projekts:**
+   Indem die benötigten Bibliotheken klar definiert werden, kann der gesamte Code auf anderen Systemen ausgeführt werden, ohne dass Anpassungen erforderlich sind.
+
+
+```{r}
+# Einlesen des Datensatzes
+
+data_random_forest <- read_csv("loan_sample_4.csv")  # Datei muss im Arbeitsverzeichnis liegen
+
+# Überblick über die Daten
+
+head(data_random_forest)    # Zeigt die ersten 6 Zeilen
+tail(data_random_forest)    # Zeigt die letzten 6 Zeilen
+str(data_random_forest)     # Zeigt die Struktur des Datensatzes (Variablentypen, Spaltennamen)
+summary(data_random_forest) # Statistische Zusammenfassung
+```
+
+## Warum wurde dieser Schritt durchgeführt?
+
+### Erster Überblick
+1. **`head()` und `tail()`:**  
+   Diese Funktionen zeigen Beispiele aus den ersten und letzten Zeilen des Datensatzes. Sie helfen dabei, die Struktur und Inhalte der Daten zu verstehen, z. B. Kategorien in den Spalten oder mögliche unerwartete Werte.
+
+2. **`str()`:**  
+   Diese Funktion zeigt die Datentypen jeder Spalte (z. B. numerisch, Zeichenketten) sowie die ersten paar Werte. Dies stellt sicher, dass die Daten korrekt eingelesen wurden und die Variablentypen den Erwartungen entsprechen.
+
+3. **`summary()`:**  
+   Diese Funktion bietet eine statistische Zusammenfassung der numerischen Variablen, einschliesslich Minimum, Maximum, Median, und Mittelwert. Sie hilft, potenzielle Ausreisser oder ungewöhnliche Werte zu identifizieren.
+
+---
+
+## Was wurde aus der Analyse ersichtlich?
+
+### Überblick über die Struktur
+- Der Datensatz enthält **17 Spalten** mit einer Mischung aus numerischen (`num`) und kategorischen (`chr`) Variablen.
+- Wichtige Variablen im Datensatz:
+  - **`loan_amnt`:** Kredithöhe  
+  - **`int_rate`:** Zinssatz  
+  - **`grade`:** Kreditbewertung  
+  - **`home_ownership`:** Besitzverhältnis (z. B. Miete, Eigentum)  
+  - **`Status`:** Zielvariable, die angibt, ob ein Kredit zurückgezahlt wurde (1) oder nicht (0).
+
+### Statistische Erkenntnisse
+- **`loan_amnt`:** Die Kredithöhen variieren von **1.000** bis **40.000**.
+- **`int_rate`:** Der Zinssatz reicht von etwa **5,31%** bis **27,49%**, was auf eine breite Palette an Kreditbedingungen hinweist.
+- **`annual_inc`:** Das Jahreseinkommen der Kreditnehmer reicht von **5.000** bis **400.000**, was auf Personen aus verschiedenen Einkommensgruppen hindeutet.
+- **`Status`:** Diese Variable zeigt, ob ein Kredit erfolgreich zurückgezahlt wurde (`1`) oder nicht (`0`).
+
+### Potenzielle Probleme
+- Die Spalte **`revol_util`** zeigt negative Werte. Diese sollten überprüft werden, da solche Werte normalerweise Prozentwerte darstellen.
+- Möglicherweise gibt es fehlende Werte oder inkonsistente Kategorien in Spalten wie **`purpose`** oder **`home_ownership`**. Diese müssen in späteren Schritten behandelt werden.
+
+
+```{r}
+## Analyse von fehlenden Werten und Übersicht des Datensatzes
+
+### Code
+```{r}
+# Prüfung auf fehlende Werte (NAs) in jeder Spalte
+apply(data_random_forest, 2, function(x) any(is.na(x)))
+
+# Summierung fehlender Werte in jeder Spalte
+colSums(is.na(data_random_forest))
+
+# Übersicht über den gesamten Datensatz
+overview(data_random_forest)
+overview <- overview(data_random_forest)
+
+# Visualisierung der Übersicht des Datensatzes
+plot(overview)
+```
+
+## Analyse von fehlenden Werten und Übersicht des Datensatzes
+
+### Warum wurde dieser Schritt durchgeführt?
+
+1. **`apply(data_random_forest, 2, function(x) any(is.na(x)))`:**  
+   - **Funktion:** Überprüft jede Spalte im Datensatz auf das Vorhandensein fehlender Werte (`NA`).
+   - **Warum notwendig?** Fehlende Werte können Algorithmen stören und zu Fehlern führen. Diese Funktion hilft, Spalten mit potenziellen Problemen frühzeitig zu identifizieren.
+
+2. **`colSums(is.na(data_random_forest))`:**  
+   - **Funktion:** Zählt die Anzahl der fehlenden Werte in jeder Spalte.
+   - **Warum notwendig?** Eine detaillierte Übersicht über die fehlenden Werte hilft bei der Entscheidung, ob diese Werte im weiteren Verlauf bereinigt oder ersetzt werden müssen.
+
+3. **`overview(data_random_forest)`:**  
+   - **Funktion:** Liefert eine umfassende Übersicht über den Datensatz, einschliesslich der Anzahl der Beobachtungen, Variablen, Datentypen (z. B. numerisch, kategorisch), Speichergrösse und mehr.
+   - **Warum notwendig?** Eine ganzheitliche Analyse des Datensatzes gibt einen Überblick über seine Struktur und hilft, Anomalien wie Duplikate oder inkonsistente Datentypen zu identifizieren.
+
+4. **`plot(overview)`:**  
+   - **Funktion:** Visualisiert die Übersicht des Datensatzes in einem Diagramm. Es zeigt die Verteilung der Datentypen (z. B. numerisch, charakterbasiert) und markiert fehlende Werte.
+   - **Warum notwendig?** Grafische Darstellungen erleichtern das Verständnis und die Kommunikation der Ergebnisse.
+
+---
+
+### Was zeigen die Ausgaben?
+
+1. **Ausgabe von `apply()` und `colSums()`:**  
+   - In der Ausgabe zeigt jede Spalte `FALSE` für `apply()` und `0` für `colSums()`. Dies bedeutet, dass es **keine fehlenden Werte (`NA`)** im Datensatz gibt.
+
+2. **Ausgabe von `overview()`:**  
+   - **Wichtige Erkenntnisse:**
+     - **40.000 Beobachtungen** und **17 Variablen** im Datensatz.
+     - **12 numerische Variablen** und **5 kategorische Variablen**.
+     - **Keine Duplikate:** Es gibt keine duplizierten Beobachtungen im Datensatz.
+     - **Keine fehlenden Werte:** Alle Beobachtungen sind vollständig.
+   - **Warum wichtig?** Diese Ergebnisse bestätigen, dass der Datensatz vollständig und sauber ist, was eine optimale Voraussetzung für die Modellierung ist.
+
+3. **Plot von `overview`:**  
+   - Der Plot visualisiert, dass alle Variablen entweder numerisch oder charakterbasiert sind und keine fehlenden Werte (`Missing`) vorliegen.
+   - **Farblegende:**
+     - **Blau:** Numerische Daten.
+     - **Rot:** Charakterbasierte Daten (kategorisch).
+     - **Schwarze Punkte:** Fehlende Werte (keine Punkte bedeutet keine fehlenden Werte).
+     
+
+```{r}
+# Konvertiere 'Status' in einen Faktor
+data_random_forest$Status <- as.factor(data_random_forest$Status)
+
+# Überprüfe, welche Spalten numerisch sind
+numeric_columns <- sapply(data_random_forest, is.numeric)
+
+# Erstelle eine Teilmenge mit nur numerischen Spalten
+numeric_data <- data_random_forest[, numeric_columns]
+
+```
+
+## Beschreibung der Schritte
+
+### Warum wurde dieser Schritt durchgeführt?
+
+1. **`data_random_forest$Status <- as.factor(data_random_forest$Status)`**  
+   - **Funktion:** Konvertiert die Zielvariable `Status` von numerisch zu einem Faktor.
+   - **Warum notwendig?** Viele Machine-Learning-Algorithmen behandeln Zielvariablen unterschiedlich, je nachdem, ob sie als numerisch oder kategorial definiert sind. Durch die Umwandlung in einen Faktor wird sichergestellt, dass `Status` als kategoriale Zielvariable erkannt wird, mit den Werten:
+     - `0`: Kredit zurückgezahlt.
+     - `1`: Kredit nicht zurückgezahlt.
+
+2. **`sapply(data_random_forest, is.numeric)`**  
+   - **Funktion:** Überprüft, welche Spalten des Datensatzes numerisch sind.
+   - **Warum notwendig?** Numerische Spalten sind für viele Analyse- und Modellierungsschritte relevant, z. B. für Berechnungen, Korrelationen oder Ausreisseranalysen. Mit diesem Schritt wird eine klare Identifikation vorgenommen.
+
+3. **`numeric_data <- data_random_forest[, numeric_columns]`**  
+   - **Funktion:** Erstellt einen neuen Datensatz `numeric_data`, der ausschliesslich numerische Spalten enthält.
+   - **Warum notwendig?** Indem nur die numerischen Variablen herausgefiltert werden, wird die Datenanalyse fokussierter, und unnötige Berechnungen auf nicht-numerischen Variablen werden vermieden.
+
+---
+
+### Was zeigen die Ausgaben?
+
+1. **Ausgabe `data_random_forest$Status`:**  
+   - Die Zielvariable `Status` wurde erfolgreich in einen Faktor umgewandelt. Die Werte `0` und `1` stehen für die beiden Klassen:
+     - `0`: Kredit zurückgezahlt.
+     - `1`: Kredit nicht zurückgezahlt.
+   - Diese Klassen werden in späteren Analysen und Modellen als Kategorien behandelt.
+
+2. **Ausgabe `sapply(data_random_forest, is.numeric)`:**  
+   - Identifiziert **11 numerische Spalten** im Datensatz. Die Ergebnisse (`TRUE` oder `FALSE`) geben an, ob eine Spalte numerisch ist.
+
+3. **Ausgabe `numeric_data`:**  
+   - Der neue Datensatz `numeric_data` enthält nur die numerischen Spalten, z. B.:
+     - `loan_amnt`: Kredithöhe.
+     - `int_rate`: Zinssatz.
+     - `annual_inc`: Jahreseinkommen.
+   - Dies ermöglicht eine gezielte Analyse der numerischen Daten im Datensatz.
+   
+```{r}
+## Analyse der Ausreisser im Datensatz
+
+### Code
+```{r}
+# Erstellung eines Boxplots zur Visualisierung von Ausreissern
+boxplot(scale(numeric_data), use.cols = TRUE, main = "Original Dataset")
+
+# Erstellung eines Berichts über Ausreisser
+outlier_report <- diagnose_outlier(data_random_forest)
+
+# Anordnung der Variablen basierend auf dem Anteil der Ausreisser
+outlier_report %>% arrange(desc(outliers_ratio))
+
+# Visualisierung der Variablen mit hohem Anteil an Ausreissern
+data_random_forest %>%
+  plot_outlier(
+    diagnose_outlier(data_random_forest) %>%
+      filter(outliers_ratio >= 0.5) %>%
+      select(variables) %>%
+      unlist()
+  )
+```
+
+### Warum wurde dieser Schritt durchgeführt?
+
+#### Boxplot zur Visualisierung von Ausreissern:
+- **Funktion:**  
+  Erstellt einen Boxplot für die numerischen Variablen im Datensatz, um potenzielle Ausreisser visuell zu identifizieren.
+- **Warum notwendig?**  
+  Ausreisser können statistische Analysen und maschinelles Lernen verzerren. Die visuelle Darstellung bietet einen schnellen Überblick über Variablen, die von Ausreissern betroffen sind.
+
+#### `diagnose_outlier(data_random_forest)`:
+- **Funktion:**  
+  Identifiziert Ausreisser in allen Variablen und liefert eine Übersicht mit wichtigen Metriken wie Anzahl und Anteil der Ausreisser.
+- **Warum notwendig?**  
+  Ermöglicht die Quantifizierung und Identifikation von Variablen mit hohen Ausreisseranteilen, um gezielte Bereinigungsmassnahmen vorzubereiten.
+
+#### `outlier_report %>% arrange(desc(outliers_ratio))`:
+- **Funktion:**  
+  Sortiert die Variablen basierend auf dem Anteil der Ausreisser in absteigender Reihenfolge.
+- **Warum notwendig?**  
+  Hilft, die problematischsten Variablen mit den meisten Ausreissern schnell zu erkennen.
+
+#### `plot_outlier()`:
+- **Funktion:**  
+  Visualisiert den Einfluss von Ausreissern auf die Verteilung der Variablen und zeigt Daten mit und ohne Ausreisser.
+- **Warum notwendig?**  
+  Die Visualisierung verdeutlicht, wie Ausreisser die Datenstruktur beeinflussen und welche Variablen besonders stark betroffen sind.
+
+---
+
+### Was zeigen die Ausgaben?
+
+#### Boxplot:
+- Der Boxplot zeigt eine starke Streuung in den numerischen Variablen.
+- Variablen wie `annual_inc`, `revol_bal` und `total_rec_int` haben offensichtliche Ausreisser mit extrem hohen Werten.
+
+#### Ausreisserbericht (`diagnose_outlier`):
+- **Wichtige Erkenntnisse:**  
+  - `total_rec_int` hat den höchsten Anteil an Ausreissern (5.76%).  
+  - Andere Variablen wie `revol_bal` (4.24%) und `annual_inc` (3.60%) haben ebenfalls signifikante Anteile.  
+  - Die Mittelwerte mit und ohne Ausreisser zeigen, wie stark Ausreisser die Verteilung verzerren können.
+
+#### Sortierter Ausreisserbericht:
+- Der sortierte Bericht zeigt die Variablen mit den meisten Ausreissern, beginnend mit `total_rec_int`, gefolgt von `revol_bal` und `annual_inc`.
+
+#### Outlier-Plot:
+- Der Plot veranschaulicht, wie die Verteilung der Daten mit und ohne Ausreisser aussieht.
+- Zum Beispiel zeigt der Plot für `total_rev_hi_lim` eine deutliche Veränderung der Verteilung nach dem Entfernen der Ausreisser.
+
+
+```{r}
+## Analyse der Zielvariablen `Status` und Balancierung der Daten
+
+### Code
+```{r}
+# Häufigkeitsanalyse der Zielvariablen 'Status'
+table(data_random_forest$Status)
+
+# Prozentuale Verteilung der Zielvariablen
+PercTable(data_random_forest$Status)
+
+# Visualisierung der Verteilung von 'Status'
+ggplot(data_random_forest, aes(x = Status, fill = Status)) +
+  geom_bar() +
+  ylab("Count") +
+  xlab("Status of the loan")
+
+# Überprüfung, welche Variablen numerisch sind
+sapply(data_random_forest, is.numeric)
+
+# Dummy-Kodierung für kategoriale Variablen
+data_random_forest <- dummy_cols(data_random_forest, 
+                                 select_columns = c("grade", "home_ownership", "verification_status", "purpose", "application_type"),
+                                 remove_selected_columns = TRUE)
+
+# Überprüfung, ob alle Variablen jetzt numerisch sind
+sapply(data_random_forest, is.numeric)
+
+# Umwandlung der Zielvariablen 'Status' in numerischen Wert
+data_random_forest$Status <- as.numeric(data_random_forest$Status)
+
+# Anwendung von BLSMOTE, um die Daten auszugleichen
+border_smote_data <- BLSMOTE(X = data_random_forest[,-ncol(data_random_forest)], 
+                             target = as.numeric(data_random_forest$Status) - 1, K = 5)
+
+# Extrahieren des balancierten Datensatzes
+data_balanced <- data.frame(border_smote_data$data)
+
+# Überprüfung der Struktur des balancierten Datensatzes
+str(data_balanced)
+
+# Entfernen der Klassenvariable
+data_balanced <- data_balanced %>% select(-class)
+
+# Häufigkeitsanalyse der Zielvariablen im balancierten Datensatz
+table(data_balanced$Status)
+
+# Visualisierung der Zielvariablen im balancierten Datensatz
+ggplot(data_balanced, aes(x = Status, fill = Status)) +
+  geom_bar() +
+  ylab("Count") +
+  xlab("Status of the loan")
+
+```
+
+## Analyse der Zielvariablen und Balancierung des Datensatzes
+
+### Warum wurde dieser Schritt durchgeführt?
+
+#### `table(data_random_forest$Status)`:
+- **Funktion:**  
+  Zeigt die absolute Häufigkeit der beiden Klassen (`0` und `1`) in der Zielvariablen `Status`.
+- **Warum notwendig?**  
+  Dieser Schritt gibt einen Überblick darüber, wie unausgeglichen die Zielvariable ist, was für die Modellierung wichtig ist. Ein unausgeglichener Datensatz kann zu Verzerrungen in den Vorhersagen führen.
+
+#### `PercTable(data_random_forest$Status)`:
+- **Funktion:**  
+  Gibt die prozentuale Verteilung der Klassen in der Zielvariablen `Status` zurück.
+- **Warum notwendig?**  
+  Ergänzt die absoluten Häufigkeiten und zeigt die relative Verteilung der Klassen.
+
+#### `ggplot(data_random_forest, aes(x = Status, fill = Status)) + geom_bar()`:
+- **Funktion:**  
+  Visualisiert die Verteilung der Klassen in der Zielvariablen mit einem Balkendiagramm.
+- **Warum notwendig?**  
+  Die grafische Darstellung verdeutlicht die Klassenungleichheit.
+
+#### Dummy-Kodierung mit `dummy_cols`:
+- **Funktion:**  
+  Wandelt kategoriale Variablen (`grade`, `home_ownership`, etc.) in numerische Dummy-Variablen um.
+- **Warum notwendig?**  
+  Viele Algorithmen erfordern numerische Eingabewerte. Dummy-Kodierung macht kategoriale Variablen für maschinelles Lernen nutzbar.
+
+#### `data_random_forest$Status <- as.numeric(data_random_forest$Status)`:
+- **Funktion:**  
+  Wandelt die Zielvariable `Status` von einem Faktor in einen numerischen Wert um.
+- **Warum notwendig?**  
+  Einige Algorithmen benötigen numerische Zielvariablen für die Berechnungen.
+
+#### Anwendung von BLSMOTE:
+- **Funktion:**  
+  Balanciert den Datensatz, indem synthetische Instanzen für die unterrepräsentierte Klasse erstellt werden.
+- **Warum notwendig?**  
+  Ausgeglichene Datensätze führen zu besserer Modellleistung, da das Modell nicht von der Mehrheitsklasse dominiert wird.
+
+---
+
+### Was zeigen die Ausgaben?
+
+#### Vor der Balancierung:
+1. **`table(data_random_forest$Status)`**:
+   - Klasse `0`: 34,850 Instanzen (Mehrheit).
+   - Klasse `1`: 5,150 Instanzen (Minderheit).
+   - Zeigt eine starke Klassenungleichheit.
+
+2. **Balkendiagramm**:
+   - Visualisiert die Dominanz der Klasse `0` gegenüber Klasse `1`.
+
+3. **Dummy-Kodierung**:
+   - Nach der Kodierung bestehen alle kategorialen Variablen aus numerischen Dummy-Spalten.
+
+#### Nach der Balancierung:
+1. **BLSMOTE**:
+   - Erzeugt einen ausgeglichenen Datensatz mit:
+     - Klasse `1`: 34,850 Instanzen.
+     - Klasse `2`: 33,486 Instanzen.
+
+2. **Balkendiagramm (balanciert)**:
+   - Zeigt, dass die beiden Klassen nun nahezu gleichmässig verteilt sind, was für die Modellierung optimal ist.
+
+3. **`overview(data_balanced)`**:
+   - Bestätigt, dass der balancierte Datensatz keine fehlenden Werte oder Duplikate enthält und alle Variablen numerisch sind.
+
+
+```{r}
+## Feature Selection mit Boruta und Visualisierung der Variablenwichtigkeit
+
+### Code
+```{r}
+# Boruta-Feature-Auswahl auf den ausgeglichenen Datensatz anwenden
+boruta_model <- Boruta(Status ~ ., data = data_balanced, doTrace = 2)
+
+# Wichtige Merkmale extrahieren
+important_features <- getSelectedAttributes(boruta_model, withTentative = TRUE)
+print(important_features)
+
+# Visualisierung der Variablenwichtigkeit
+plot(boruta_model, cex.axis = 0.7, las = 2, xlab = "", main = "Variable Importance")
+
+# Extraktion der Statistiken für die ausgewählten Merkmale
+forest_df <- attStats(boruta_model)
+print(forest_df)
+
+# Entfernen nicht relevanter Spalten
+data_balanced_two <- data_balanced %>%
+  select(-c(purpose_renewable_energy, purpose_wedding))
+
+# Boruta-Feature-Auswahl auf den bereinigten Datensatz anwenden
+boruta_model <- Boruta(Status ~ ., data = data_balanced_two, doTrace = 2)
+
+# Wichtige Merkmale aus dem bereinigten Datensatz extrahieren
+important_features <- getSelectedAttributes(boruta_model, withTentative = TRUE)
+print(important_features)
+
+# Visualisierung der Variablenwichtigkeit im bereinigten Datensatz
+plot(boruta_model, cex.axis = 0.7, las = 2, xlab = "", main = "Variable Importance")
+
+# Sortierung der Merkmale basierend auf ihrer Wichtigkeit
+forest_two_df <- attStats(boruta_model) %>% arrange(desc(meanImp))
+print(forest_two_df)
+
+```
+
+## Feature Selection mit Boruta
+
+### Warum wurden diese Schritte durchgeführt?
+
+#### 1. **Boruta-Modellierung (`Boruta(Status ~ ., ...)`)**
+- **Funktion:**  
+  Das Boruta-Verfahren bewertet die Wichtigkeit aller Variablen im Datensatz, indem es den Beitrag jeder Variable zur Zielvariablen (Status) analysiert. Variablen mit geringer oder keiner Bedeutung werden abgelehnt.
+- **Warum notwendig?**  
+  Das Modell reduziert die Dimensionen, indem es irrelevante oder weniger wichtige Variablen eliminiert. Dies verbessert die Modellleistung, reduziert die Überanpassung und beschleunigt die Berechnung.
+
+#### 2. **Extraktion wichtiger Merkmale (`getSelectedAttributes()`)**
+- **Funktion:**  
+  Listet die als wichtig eingestuften Variablen auf, einschliesslich derjenigen mit unsicherer Bewertung.
+- **Warum notwendig?**  
+  Bietet eine Übersicht, welche Variablen im weiteren Modellierungsprozess berücksichtigt werden sollten.
+
+#### 3. **Visualisierung der Variablenwichtigkeit (`plot(boruta_model, ...)`)**
+- **Funktion:**  
+  Erstellt einen Plot, der die Wichtigkeit der einzelnen Variablen darstellt. 
+- **Warum notwendig?**  
+  Die grafische Darstellung bietet eine schnelle Übersicht, welche Merkmale die höchste Relevanz besitzen und welche weniger relevant sind.
+
+#### 4. **Entfernung irrelevanter Variablen**
+- **Funktion:**  
+  Entfernt Variablen wie `purpose_renewable_energy` und `purpose_wedding`, die von Boruta als unwichtig bewertet wurden.
+- **Warum notwendig?**  
+  Dies reduziert die Komplexität des Modells und fokussiert die Analyse auf die relevanten Merkmale.
+
+---
+
+### Was zeigen die Ausgaben?
+
+#### 1. **Ergebnisse des Boruta-Modells:**
+- **Wichtige Merkmale:**  
+  - `loan_amnt` (Kredithöhe): Höchste Bedeutung (meanImp: 70.12).  
+  - `grade_B` und `revol_bal` (Credit Balance): Ebenfalls hohe Bedeutung (meanImp: >55).  
+  - Diese Variablen zeigen einen starken Einfluss auf die Zielvariable (Kreditstatus).
+- **Abgelehnte Merkmale:**  
+  - `purpose_renewable_energy` und `purpose_wedding` wurden als irrelevant eingestuft und entfernt.
+
+#### 2. **Plot der Merkmalswichtigkeit:**
+- **Beschreibung:**  
+  - Die höchsten Balken gehören zu `loan_amnt`, `grade_B` und `revol_bal`, was auf deren dominierenden Einfluss hinweist.  
+  - Merkmale mit niedriger oder negativer Wichtigkeit (z. B. `purpose_renewable_energy`) sind klar sichtbar und wurden ausgeschlossen.
+
+#### 3. **Nach Entfernung irrelevanter Variablen:**
+- **Ergebnisse:**  
+  - Der Datensatz wurde erfolgreich bereinigt, und der zweite Boruta-Lauf zeigt eine klarere Differenzierung der relevanten Variablen.  
+  - Die bereinigte Liste fokussiert auf Schlüsselmerkmale wie Kredithöhe, Zinssatz (`int_rate`), und Jahreseinkommen (`annual_inc`).
+
+#### 4. **Sortierte Merkmalswichtigkeit:**
+- **Erkenntnisse:**  
+  - `loan_amnt` bleibt die wichtigste Variable.  
+  - Weitere wichtige Variablen: `grade_B`, `total_rec_int` (erhaltene Zinsen) und `annual_inc`.  
+  - Merkmale wie `purpose_car` oder `purpose_vacation` haben eine niedrigere Relevanz, was zeigt, dass sie für das Modell weniger entscheidend sind.
+
+---
+
+### Fazit:
+Die Feature Selection mit Boruta hat erfolgreich die relevanten Variablen für die Modellierung identifiziert. Der Prozess hat gezeigt, dass finanzielle Merkmale wie Kredithöhe, Kreditwürdigkeit (`grade_B`) und erhaltene Zinsen (`total_rec_int`) einen signifikanten Einfluss auf die Zielvariable `Status` haben. Irrelevante Merkmale wurden effektiv entfernt, was zu einem optimierten Datensatz für die weitere Analyse führt.
+
+```{r}
+## Analyse der Korrelationen und Bereinigung stark korrelierter Variablen
+
+### Code
+```{r}
+# Berechnung der Korrelationen (nur numerische Variablen auswählen)
+correlations <- cor(data_balanced_two[, sapply(data_balanced_two, is.numeric)], use = "complete.obs")
+
+# Visualisierung der Korrelationen mit corrplot
+corrplot(correlations, method = "circle", type = "upper", tl.cex = 0.8, tl.col = "black", addCoef.col = "black")
+
+# Korrelationen als Tabelle
+cor_df <- as.data.frame(as.table(correlations))
+
+# Starke Korrelationen filtern
+high_corr <- cor_df[abs(cor_df$Freq) > 0.7 & cor_df$Freq < 1, ]
+print(high_corr)
+
+# Entfernen einer Dummy-Variable aus 'home_ownership'
+data_balanced_two <- data_balanced_two %>%
+  select(-home_ownership_MORTGAGE)
+
+# Entfernen von einer der beiden korrelierten Variablen
+data_balanced_two <- data_balanced_two %>%
+  select(-total_rev_hi_lim)
+
+# Berechnung der Korrelationen nach der Bereinigung
+correlations <- cor(data_balanced_two[, sapply(data_balanced_two, is.numeric)], use = "complete.obs")
+
+# Starke Korrelationen erneut filtern
+cor_df <- as.data.frame(as.table(correlations))
+high_corr <- cor_df[abs(cor_df$Freq) > 0.7 & cor_df$Freq < 1, ]
+print(high_corr)
+
+```
+
+# Analyse der Korrelationen und Bereinigung stark korrelierter Variablen
+
+## Warum wurden diese Schritte durchgeführt?
+
+### 1. Berechnung der Korrelationen (`cor`)
+- **Funktion:**  
+  Berechnet die paarweisen Korrelationen zwischen den numerischen Variablen.
+- **Warum notwendig?**  
+  Ziel ist es, stark korrelierte Variablenpaare zu identifizieren, die Redundanz erzeugen und zu Multikollinearität führen können.
+
+### 2. Visualisierung der Korrelationen (`corrplot`)
+- **Funktion:**  
+  Zeigt die Korrelationen zwischen Variablen grafisch:  
+  - **Blaue Kreise:** Hohe positive Korrelation (z. B., `grade_D` und `int_rate`: 0.776).  
+  - **Rote Kreise:** Hohe negative Korrelation (z. B., `home_ownership_RENT` und `home_ownership_MORTGAGE`: -0.827).  
+- **Warum notwendig?**  
+  Die Visualisierung bietet eine intuitive Darstellung und hebt stark korrelierte Variablenpaare visuell hervor.
+
+### 3. Korrelationen als Tabelle (`as.table`)
+- **Funktion:**  
+  Wandelt die Korrelationen in ein tabellarisches Format um.
+- **Warum notwendig?**  
+  Die Tabelle erleichtert das Filtern und Identifizieren spezifischer Variablenpaare mit hoher Korrelation.
+
+### 4. Filtern starker Korrelationen
+- **Funktion:**  
+  Identifiziert Paare mit einer Korrelation > 0.7 (stark positiv) oder < -0.7 (stark negativ).
+- **Warum notwendig?**  
+  Hohe Korrelationen weisen auf Variablen hin, die ähnliche Informationen liefern und zu Modellproblemen führen können.
+
+### 5. Bereinigung korrelierter Variablen
+- **Funktion:**  
+  - Entfernt `home_ownership_MORTGAGE`, da es mit `home_ownership_RENT` stark negativ korreliert ist.  
+  - Entfernt `total_rev_hi_lim`, da es mit `revol_bal` stark positiv korreliert ist.  
+- **Warum notwendig?**  
+  Reduziert redundante Informationen und verbessert die Datenstruktur für maschinelles Lernen.
+
+---
+
+## Was zeigen die Ausgaben?
+
+### **Vor der Bereinigung:**
+
+#### Visualisierung (`corrplot`):
+1. **Positiv korrelierte Variablen:**  
+   - `grade_D` und `int_rate` (0.776):  
+     Eine starke Korrelation bedeutet, dass der Zinssatz (`int_rate`) eng mit der Bonitätsstufe (`grade_D`) zusammenhängt.
+   - `revol_bal` und `total_rev_hi_lim` (0.744):  
+     Zeigt, dass das Revolving-Guthaben (`revol_bal`) mit dem Kreditlimit (`total_rev_hi_lim`) korreliert ist.
+2. **Negativ korrelierte Variablen:**  
+   - `home_ownership_RENT` und `home_ownership_MORTGAGE` (-0.827):  
+     Dummy-Variablen für `home_ownership` sind erwartungsgemäss stark negativ korreliert.
+
+#### Tabellarische Übersicht:
+- Die Tabelle hebt die Variablenpaare hervor, die eine starke Korrelation aufweisen.  
+  **Beispiele:**  
+  - `grade_D` vs. `int_rate`: 0.776  
+  - `home_ownership_RENT` vs. `home_ownership_MORTGAGE`: -0.827  
+- Dies weist auf potenzielle Redundanz hin, die bereinigt werden sollte.
+
+---
+
+### **Nach der Bereinigung:**
+
+#### Visualisierung (`corrplot`):
+- **Ergebnis:**  
+  - Keine stark korrelierten Variablen bleiben übrig.  
+  - Die grössten Kreise (hohe Korrelationen) wurden entfernt.  
+  - Die Korrelationen sind gleichmässiger verteilt, wodurch das Risiko von Multikollinearität gesenkt wurde.
+
+#### Tabellarische Übersicht:
+- **Ergebnis:**  
+  - Nach der Bereinigung bleiben keine Variablenpaare mit Korrelationen > 0.7 oder < -0.7 übrig.  
+  - Dies bestätigt, dass die Bereinigung redundant korrelierter Variablen erfolgreich war.
+
+---
+
+## Fazit:
+Die Schritte haben redundante Informationen im Datensatz entfernt (`home_ownership_MORTGAGE` und `total_rev_hi_lim`). Dies verbessert die Datenstruktur, reduziert Multikollinearität und bereitet die Daten für eine bessere Modellleistung vor.
+
+
+```{r}
+## Training und Modellierung: Random Forest
+
+### Code
+
+```r
+## Training und Testdatensatz aufteilen
+set.seed(7)
+div <- createDataPartition(y = data_balanced_two$Status, p = 0.7, list = FALSE)
+
+# Training Sample
+data.train <- data_balanced_two[div,] # 70% der Daten
+
+# Test Sample
+data.test <- data_balanced_two[-div,] # restlichen 30% der Daten
+
+# Frequenzanalyse der Zielvariable in Original-, Trainings- und Testdaten
+PercTable(data_balanced_two$Status)
+PercTable(data.train$Status)
+PercTable(data.test$Status)
+
+# Random Forest-Modell auf Trainingsdaten trainieren
+rf_model <- randomForest(Status ~ ., data = data.train, importance = TRUE)
+
+# Zusammenfassung des Modells
+print(rf_model)
+
+# Wichtigen Variablen des Modells anzeigen
+importance(rf_model)
+
+# Plot der Variablen-Wichtigkeit
+varImpPlot(rf_model)
+
+# Entfernen weniger wichtiger Variablen und Aktualisierung des Datensatzes
+data_balanced_three <- data_balanced_two %>%
+  select(-purpose_house, -purpose_small_business, -purpose_vacation, -purpose_moving, -purpose_car, -purpose_medical)
+
+## Training und Testdatensatz erneut erstellen
+set.seed(7)
+div <- createDataPartition(y = data_balanced_three$Status, p = 0.7, list = FALSE)
+
+# Training Sample
+data.train <- data_balanced_three[div,]
+
+# Test Sample
+data.test <- data_balanced_three[-div,]
+
+# Random Forest-Modell erneut trainieren
+rf_model <- randomForest(Status ~ ., data = data.train, importance = TRUE)
+
+# Zusammenfassung des Modells
+print(rf_model)
+
+# Wichtigen Variablen des Modells erneut anzeigen
+importance(rf_model)
+
+# Plot der Variablen-Wichtigkeit
+varImpPlot(rf_model)
+
+```
+
+## Warum wurden diese Schritte durchgeführt?
+
+### Aufteilung der Daten in Trainings- und Testdatensätze:
+- **Funktion:**  
+  Teilt die Daten in Trainings- (70%) und Testdatensätze (30%), um Overfitting zu vermeiden und die Modellleistung auf unabhängigen Daten zu evaluieren.
+- **Warum notwendig?**  
+  Eine gute Modellbewertung erfordert, dass das Modell auf Daten getestet wird, die es noch nicht gesehen hat.
+
+### Trainieren des Random Forest-Modells:
+- **Funktion:**  
+  Erstellt ein Random Forest-Modell zur Vorhersage der Zielvariable `Status` basierend auf den Merkmalen.
+- **Warum notwendig?**  
+  Random Forest ist robust gegenüber Ausreissern und kann wichtige Variablen für die Vorhersage identifizieren.
+
+### Bewertung der Variablen-Wichtigkeit:
+- **Funktion:**  
+  Identifiziert und visualisiert die wichtigsten Merkmale, die zur Modellleistung beitragen.
+- **Warum notwendig?**  
+  Dies hilft, irrelevante Variablen zu entfernen und das Modell zu optimieren.
+
+### Plot der Variablen-Wichtigkeit (`varImpPlot`):
+- **Funktion:**  
+  Zeigt die Wichtigkeit der Variablen basierend auf `MeanDecreaseAccuracy` und `MeanDecreaseGini`.
+- **Warum notwendig?**  
+  Bietet eine intuitive Visualisierung der einflussreichsten Merkmale.
+
+### Entfernung irrelevanter Variablen:
+- **Funktion:**  
+  Entfernt Merkmale mit geringer Wichtigkeit, um die Komplexität des Modells zu reduzieren.
+- **Warum notwendig?**  
+  Vereinfachte Modelle sind interpretierbarer und oft effizienter.
+
+---
+
+## Was zeigen die Ausgaben?
+
+### Zusammenfassung des Modells:
+- **Anzahl der Bäume:** 500  
+- **Fehlerrate (OOB Error Rate):** 7.57%  
+  - Zeigt, dass das Modell insgesamt eine gute Leistung erbringt.
+- **Confusion Matrix:**
+  - **Klasse 1:** Hohe Genauigkeit mit einer Fehlerquote von nur 0.45%.  
+  - **Klasse 2:** Etwas höhere Fehlerquote von 14.98%, was auf eine Herausforderung bei der Vorhersage der Minderheitsklasse hindeutet.
+
+### Wichtigkeit der Variablen:
+#### **MeanDecreaseAccuracy:**
+- **Misst:** Wie viel die Genauigkeit sinkt, wenn eine Variable entfernt wird.
+- **Höchste Werte:**
+  - `loan_amnt` (98.40): Wichtig für die Vorhersage.
+  - `revol_bal` (85.60): Bedeutender Einfluss auf die Zielvariable.
+  - `grade_B` und `total_rec_int` (> 77): Ebenfalls entscheidend.
+
+#### **MeanDecreaseGini:**
+- **Bewertet:** Die Wichtigkeit einer Variablen basierend auf der Trennung der Datenpunkte.
+- **Höchste Werte:**
+  - `grade_D` (2573.46): Grösster Beitrag zur Datenaufteilung.
+  - `grade_B` (1974.35): Ebenfalls stark einflussreich.
+  - `loan_amnt` und `tot_cur_bal` (> 800): Weitere wichtige Merkmale.
+
+---
+
+### Plots der Variablen-Wichtigkeit:
+#### **Interpretation der Achsen:**
+- **MeanDecreaseAccuracy:** Variablen mit höherem Wert verbessern die Modellgenauigkeit stärker.
+- **MeanDecreaseGini:** Variablen mit höherem Wert tragen mehr zur Trennung der Klassen bei.
+
+#### **Wichtigste Erkenntnisse:**
+- Finanzielle Merkmale wie `loan_amnt` und `revol_bal` sind entscheidend.
+- Bonitätsmerkmale (`grade_B`, `grade_D`) spielen eine zentrale Rolle.
+- Einige Variablen wie `purpose_car` und `purpose_medical` haben sehr niedrige Werte und wurden entfernt.
+
+---
+
+## Fazit:
+Die Schritte haben gezeigt, dass finanzielle und bonitätsbezogene Variablen wie `loan_amnt`, `grade_B`, und `revol_bal` die stärksten Prädiktoren für die Zielvariable sind. Durch die Entfernung irrelevanter Merkmale wurde das Modell effizienter und interpretierbarer gestaltet. Die Modellleistung zeigt eine niedrige Fehlerrate, was auf eine solide Vorhersagequalität hinweist.
+
+```{r}
+## Beschreibung des Codes und Funktionen
+
+```r
+# Überprüfen der verbleibenden Variablen
+colnames(data_balanced_three)
+
+# Vorhersagen auf den Testdaten machen
+predictions <- predict(rf_model, newdata = data.test)
+
+# Verwirrungsmatrix zur Modell-Evaluation
+conf_matrix <- confusionMatrix(predictions, data.test$Status)
+print(conf_matrix)
+
+# Cross-Validation
+ctrl <- trainControl(method = "cv", number = 10)
+cv_model <- train(Status ~ ., data = data_balanced_three, method = "rf", trControl = ctrl)
+print(cv_model)
+
+# Vorhersagewahrscheinlichkeiten
+predicted_probs <- predict(rf_model, newdata = data.test, type = "prob")[,2]
+
+# ROC-Kurve und AUC
+roc_curve <- roc(as.numeric(data.test$Status), predicted_probs)
+plot(roc_curve, col = "blue", lwd = 2, main = "ROC Curve")
+auc_value <- auc(roc_curve)
+cat("AUC:", auc_value, "\n")
+
+# Precision, Recall, F1-Score
+precision <- posPredValue(predictions, data.test$Status)
+recall <- sensitivity(predictions, data.test$Status)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1-Score:", f1_score, "\n")
+
+# Vorhersagen auf Trainingsdaten
+predictions_train <- predict(rf_model, data.train, type = "response")
+conf_matrix_train <- confusionMatrix(predictions_train, data.train$Status)
+print(conf_matrix_train)
+
+# Cross-Validation für optimale Parameter
+ctrl <- trainControl(method = "cv", number = 10)
+cv_model <- train(Status ~ ., data = data_balanced_three, 
+                  method = "rf", 
+                  trControl = ctrl, 
+                  tuneGrid = expand.grid(mtry = seq(2, sqrt(ncol(data_balanced)), by = 1)))
+print(cv_model)
+
+# Plot zur Visualisierung der Kreuzvalidierung
+plot(cv_model)
+
+```
+
+
+### Warum wurden diese Schritte durchgeführt?
+
+#### Überprüfung, ob Variablen entfernt wurden (`colnames(data_balanced_three)`):
+- **Funktion:** Überprüft die Namen der verbleibenden Spalten im Datensatz `data_balanced_three`.
+- **Warum notwendig?** Stellt sicher, dass irrelevante oder stark korrelierte Variablen erfolgreich entfernt wurden, um die Datenqualität für das Modell zu verbessern.
+
+#### Vorhersagen auf den Testdaten (`predict(rf_model, newdata = data.test)`):
+- **Funktion:** Erstellt Vorhersagen basierend auf dem trainierten Random Forest-Modell und den Testdaten.
+- **Warum notwendig?** Ermöglicht die Bewertung der Modellleistung auf einem unabhängigen Datensatz.
+
+#### Verwirrungsmatrix (`confusionMatrix`):
+- **Funktion:** Berechnet die Leistung des Modells anhand der Testdaten, einschließlich Metriken wie Genauigkeit, Sensitivität und Spezifität.
+- **Warum notwendig?** Gibt einen detaillierten Überblick über die Modellleistung, insbesondere wie gut positive und negative Klassen vorhergesagt werden.
+
+#### Cross-Validation (`trainControl` und `train`):
+- **Funktion:** Wendet eine 10-fache Kreuzvalidierung an, um die Stabilität und Verlässlichkeit des Modells zu bewerten.
+- **Warum notwendig?** Reduziert das Risiko von Überanpassung (Overfitting) und stellt sicher, dass das Modell generalisierbar ist.
+
+#### Vorhersagewahrscheinlichkeiten und ROC-Kurve:
+- **Funktion:** Berechnet die Wahrscheinlichkeiten der Vorhersagen und erstellt eine ROC-Kurve mit der AUC (Area Under Curve).
+- **Warum notwendig?** Die ROC-Kurve visualisiert den Kompromiss zwischen Sensitivität und Spezifität, während die AUC ein Maß für die Gesamtmodellqualität bietet.
+
+#### Precision, Recall und F1-Score:
+- **Funktion:** Berechnet Präzision, Rückrufquote und den F1-Score des Modells.
+- **Warum notwendig?** Diese Metriken sind wichtig, um die Balance zwischen der Vorhersagegenauigkeit und der Erkennungsrate zu bewerten, insbesondere bei unausgeglichenen Klassen.
+
+#### Cross-Validation für optimale Hyperparameter (`mtry`):
+- **Funktion:** Findet den optimalen Wert für `mtry` (Anzahl der zu prüfenden Variablen bei jedem Split) mittels Kreuzvalidierung.
+- **Warum notwendig?** Optimiert die Modellleistung durch die Wahl geeigneter Hyperparameter.
+
+#### Plots zur Visualisierung:
+- **Funktion:** Visualisiert die ROC-Kurve und die Kreuzvalidierungsergebnisse.
+- **Warum notwendig?** Unterstützt das Verständnis der Modellleistung und der Auswirkungen der Hyperparameter.
+
+---
+
+### Was zeigen die Ausgaben?
+
+#### Verwirrungsmatrix:
+- **Genauigkeit (Accuracy):** 92.38% – Das Modell ist sehr präzise.
+- **Kappa:** 0.847 – Zeigt eine starke Übereinstimmung zwischen den Vorhersagen und den tatsächlichen Klassen.
+- **Sensitivität:** 99.65% – Fast alle positiven Klassen (Klasse 1) wurden korrekt erkannt.
+- **Spezifität:** 84.81% – Das Modell hat jedoch Schwierigkeiten, negative Klassen (Klasse 2) genau zu erkennen.
+- **Balanced Accuracy:** 92.23% – Durchschnitt der Sensitivität und Spezifität.
+
+#### ROC-Kurve und AUC:
+- **ROC-Kurve:** Die Kurve liegt deutlich über der Diagonale, was auf ein leistungsstarkes Modell hindeutet.
+- **AUC:** 0.9555 – Ein hervorragender Wert nahe 1.0, der die Qualität des Modells unterstreicht.
+
+#### Precision, Recall und F1-Score:
+- **Precision:** 87.22% – Zeigt, wie genau die Vorhersagen der positiven Klasse sind.
+- **Recall:** 99.65% – Zeigt, wie viele der tatsächlichen positiven Klassen korrekt erkannt wurden.
+- **F1-Score:** 93.02% – Eine Balance zwischen Precision und Recall, ein starker Indikator für die Modellqualität.
+
+#### Cross-Validation:
+- **Optimales `mtry`:** 6 – Dieser Wert liefert die beste Genauigkeit (92.7%).
+- **Accuracy (verschiedene `mtry`-Werte):** Die Genauigkeit steigt mit `mtry` bis zu einem Maximum bei `mtry = 6`.
+
+#### Plots:
+- **ROC-Kurve:** Veranschaulicht die Fähigkeit des Modells, zwischen den Klassen zu unterscheiden.
+- **Kreuzvalidierungsplot:** Zeigt, wie sich die Modellgenauigkeit mit unterschiedlichen `mtry`-Werten entwickelt.
+
+---
+
+### Fazit:
+Die Schritte zeigen, dass das Random Forest-Modell gut generalisiert und präzise Vorhersagen liefert. Die ROC-Kurve und die hohe AUC betonen die Stärke des Modells. Die Kreuzvalidierung sichert die Robustheit ab und zeigt, dass `mtry = 6` die optimale Wahl ist. Precision, Recall und der F1-Score bieten zusätzliche Einsichten in die Leistungsfähigkeit des Modells, insbesondere bei der Erkennung von positiven Klassen.
+
